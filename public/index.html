@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ERP - Purchase Orders</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; }
+    h1, h2 { color: #2c3e50; }
+    input, select, textarea, button { font-size: 15px; padding: 8px; margin: 4px 0; }
+    input, select, textarea { width: 100%; box-sizing: border-box; }
+    button { cursor: pointer; background: #2c3e50; color: white; border: none; border-radius: 4px; padding: 10px 16px; }
+    button.secondary { background: #7f8c8d; }
+    button.danger { background: #c0392b; }
+    table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    th { background: #f4f4f4; }
+    .card { border: 1px solid #ddd; border-radius: 6px; padding: 20px; margin-top: 20px; }
+    .error { color: #c0392b; margin-top: 10px; }
+    .success { color: #27ae60; margin-top: 10px; }
+    .item-row { display: flex; gap: 8px; margin-bottom: 6px; }
+    .item-row input { width: auto; flex: 1; }
+    .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+    .tabs button { background: #ecf0f1; color: #2c3e50; }
+    .tabs button.active { background: #2c3e50; color: white; }
+    body { background: #f7f8fa; }
+    .card { background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    button { transition: opacity 0.15s; }
+    button:hover { opacity: 0.85; }
+    h1 { margin-bottom: 4px; }
+    #userInfo { color: #7f8c8d; font-size: 14px; margin-top: 0; }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+  <div id="loginScreen" class="card" style="max-width:350px; margin:60px auto;">
+  <h2>Log In</h2>
+  <label>Username</label>
+  <input type="text" id="loginUsername">
+  <label>Password</label>
+  <input type="password" id="loginPassword">
+  <div id="loginError" class="error"></div>
+  <br>
+  <button onclick="login()">Log In</button>
+</div>
+
+<div id="appScreen" style="display:none;">
+  <h1>Purchase Order System</h1>
+  <p id="userInfo"></p>
+  <button class="secondary" onclick="logout()">Log Out</button>
+
+
+  <div class="tabs">
+    <button id="tabSearchBtn" class="active" onclick="showTab('search')">Search</button>
+    <button id="tabAddBtn" onclick="showTab('add')">Add Invoice</button>
+    <button id="tabDashboardBtn" onclick="showTab('dashboard')">Dashboard</button>
+    <button id="tabAuditBtn" onclick="showTab('audit')">Audit Log</button>
+  </div>
+
+  <!-- SEARCH TAB -->
+  <div id="searchTab">
+    <input type="text" id="invoiceInput" placeholder="e.g. INV-1001">
+    <button onclick="searchInvoice()">Search</button>
+    <div id="error" class="error"></div>
+    <div id="result"></div>
+  </div>
+
+  <!-- ADD TAB -->
+  <div id="addTab" style="display:none;">
+    <div class="card">
+      <h2>New Purchase Order</h2>
+      <label>Invoice Number</label>
+      <input type="text" id="newInvoiceNumber" placeholder="INV-1006">
+      <label>Supplier Name</label>
+      <input type="text" id="newSupplierName" placeholder="Acme Supplies">
+      <label>Supplier Contact (optional)</label>
+      <input type="text" id="newSupplierContact" placeholder="email or phone">
+      <label>Order Date</label>
+      <input type="date" id="newOrderDate">
+      <label>Status</label>
+      <select id="newStatus">
+        <option value="pending">Pending</option>
+        <option value="paid">Paid</option>
+        <option value="cancelled">Cancelled</option>
+      </select>
+      <label>Notes (optional)</label>
+      <textarea id="newNotes" rows="2"></textarea>
+
+      <h3>Items</h3>
+      <div id="itemsContainer"></div>
+      <button class="secondary" onclick="addItemRow()">+ Add Item</button>
+
+      <div id="addError" class="error"></div>
+      <div id="addSuccess" class="success"></div>
+      <br>
+      <button onclick="submitInvoice()">Save Purchase Order</button>
+    </div>
+  </div>
+
+  <!-- AUDIT LOG TAB -->
+<div id="auditTab" style="display:none;">
+  <div class="card">
+    <h2>Recent Activity</h2>
+    <div id="auditLogContent">Loading...</div>
+  </div>
+</div>
+
+  <!-- DASHBOARD TAB -->
+<div id="dashboardTab" style="display:none;">
+  <div class="card">
+    <h2>Filters</h2>
+    <label>Start Date</label>
+    <input type="date" id="filterStartDate">
+    <label>End Date</label>
+    <input type="date" id="filterEndDate">
+    <label>Status</label>
+    <select id="filterStatus">
+      <option value="">All</option>
+      <option value="pending">Pending</option>
+      <option value="paid">Paid</option>
+      <option value="cancelled">Cancelled</option>
+    </select>
+    <br><br>
+    <button onclick="loadDashboard()">Apply Filters</button>
+    <button class="secondary" onclick="clearFilters()">Clear</button>
+    <button onclick="exportCSV()">Export All to CSV</button>
+  </div>
+
+  <div class="card">
+    <h2>Summary</h2>
+    <div id="summaryCards" style="display:flex; gap:20px; flex-wrap:wrap;"></div>
+  </div>
+
+  <div class="card">
+    <h2>Spend by Supplier</h2>
+    <canvas id="supplierChart" height="100"></canvas>
+  </div>
+
+  <div class="card">
+    <h2>Monthly Spend Trend</h2>
+    <canvas id="trendChart" height="100"></canvas>
+  </div>
+</div>
+
+  <script>
+    async function checkSession() {
+  const res = await fetch('http://localhost:3000/api/session', {
+  credentials: 'include' });
+  const data = await res.json();
+  if (data.loggedIn) {
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('appScreen').style.display = 'block';
+    document.getElementById('userInfo').textContent = `Logged in as ${data.username}`;
+  } else {
+    document.getElementById('loginScreen').style.display = 'block';
+    document.getElementById('appScreen').style.display = 'none';
+  }
+}
+checkSession();
+
+async function login() {
+  const username = document.getElementById('loginUsername').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const errorDiv = document.getElementById('loginError');
+  errorDiv.textContent = '';
+
+  try {
+    const res = await fetch('http://localhost:3000/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ username, password })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      errorDiv.textContent = data.error;
+      return;
+    }
+    checkSession();
+  } catch (err) {
+    errorDiv.textContent = 'Could not connect to server.';
+  }
+}
+
+async function logout() {
+  await fetch('http://localhost:3000/api/logout', { method: 'POST', credentials: 'include' });
+  checkSession();
+}
+    function showTab(tab) {
+      document.getElementById('searchTab').style.display = tab === 'search' ? 'block' : 'none';
+      document.getElementById('addTab').style.display = tab === 'add' ? 'block' : 'none';
+      document.getElementById('dashboardTab').style.display = tab === 'dashboard' ? 'block' : 'none';
+      document.getElementById('auditTab').style.display = tab === 'audit' ? 'block' : 'none';
+      document.getElementById('tabSearchBtn').className = tab === 'search' ? 'active' : '';
+      document.getElementById('tabAddBtn').className = tab === 'add' ? 'active' : '';
+      document.getElementById('tabDashboardBtn').className = tab === 'dashboard' ? 'active' : '';
+      document.getElementById('tabAuditBtn').className = tab === 'audit' ? 'active' : '';
+
+      
+      if (tab === 'dashboard') loadDashboard();
+      if (tab === 'audit') loadAuditLog();
+    
+  }
+
+  let supplierChartInstance = null;
+let trendChartInstance = null;
+
+function clearFilters() {
+  document.getElementById('filterStartDate').value = '';
+  document.getElementById('filterEndDate').value = '';
+  document.getElementById('filterStatus').value = '';
+  loadDashboard();
+}
+
+async function loadDashboard() {
+  const startDate = document.getElementById('filterStartDate').value;
+  const endDate = document.getElementById('filterEndDate').value;
+  const status = document.getElementById('filterStatus').value;
+
+  const params = new URLSearchParams();
+  if (startDate) params.append('startDate', startDate);
+  if (endDate) params.append('endDate', endDate);
+  if (status) params.append('status', status);
+
+  try {
+    const res = await fetch(`http://localhost:3000/api/dashboard/summary?${params}`, {
+      credentials: 'include'
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      document.getElementById('summaryCards').innerHTML = `<p class="error">${err.error}</p>`;
+      return;
+    }
+    const data = await res.json();
+    renderSummaryCards(data.summary);
+    renderSupplierChart(data.bySupplier);
+    renderTrendChart(data.trend);
+  } catch (err) {
+    document.getElementById('summaryCards').innerHTML = `<p class="error">Could not connect to server.</p>`;
+  }
+}
+
+function renderSummaryCards(s) {
+  const cardStyle = 'flex:1; min-width:150px; background:#f4f4f4; border-radius:6px; padding:15px; text-align:center;';
+  document.getElementById('summaryCards').innerHTML = `
+    <div style="${cardStyle}"><h3>${s.total_invoices}</h3><p>Total Invoices</p></div>
+    <div style="${cardStyle}"><h3>৳${Number(s.total_spend).toLocaleString()}</h3><p>Total Spend</p></div>
+    <div style="${cardStyle}"><h3>৳${Number(s.paid_spend || 0).toLocaleString()}</h3><p>Paid (${s.paid_count || 0})</p></div>
+    <div style="${cardStyle}"><h3>৳${Number(s.pending_spend || 0).toLocaleString()}</h3><p>Pending (${s.pending_count || 0})</p></div>
+    <div style="${cardStyle}"><h3>৳${Number(s.cancelled_spend || 0).toLocaleString()}</h3><p>Cancelled (${s.cancelled_count || 0})</p></div>
+  `;
+}
+
+function renderSupplierChart(rows) {
+  const ctx = document.getElementById('supplierChart').getContext('2d');
+  if (supplierChartInstance) supplierChartInstance.destroy();
+  supplierChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: rows.map(r => r.supplier_name),
+      datasets: [{
+        label: 'Total Spend (৳)',
+        data: rows.map(r => r.total_spend),
+        backgroundColor: '#2c3e50'
+      }]
+    },
+    options: { responsive: true, plugins: { legend: { display: false } } }
+  });
+}
+
+function renderTrendChart(rows) {
+  const ctx = document.getElementById('trendChart').getContext('2d');
+  if (trendChartInstance) trendChartInstance.destroy();
+  trendChartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: rows.map(r => r.month),
+      datasets: [{
+        label: 'Monthly Spend (৳)',
+        data: rows.map(r => r.total_spend),
+        borderColor: '#27ae60',
+        backgroundColor: 'rgba(39, 174, 96, 0.1)',
+        fill: true,
+        tension: 0.3
+      }]
+    },
+    options: { responsive: true, plugins: { legend: { display: false } } }
+  });
+}
+
+async function loadAuditLog() {
+  const container = document.getElementById('auditLogContent');
+  container.innerHTML = '<p>Loading...</p>';
+  try {
+    const res = await fetch('http://localhost:3000/api/audit-log', { credentials: 'include' });
+    if (!res.ok) {
+      const err = await res.json();
+      container.innerHTML = `<p class="error">${err.error}</p>`;
+      return;
+    }
+    const rows = await res.json();
+    if (rows.length === 0) {
+      container.innerHTML = '<p>No activity yet.</p>';
+      return;
+    }
+    let html = '<table><tr><th>Time</th><th>User</th><th>Action</th><th>Invoice</th><th>Details</th></tr>';
+    rows.forEach(r => {
+      const time = new Date(r.created_at).toLocaleString();
+      html += `<tr><td>${time}</td><td>${r.username}</td><td>${r.action}</td><td>${r.invoice_number || '-'}</td><td>${r.details || ''}</td></tr>`;
+    });
+    html += '</table>';
+    container.innerHTML = html;
+  } catch (err) {
+    container.innerHTML = '<p class="error">Could not connect to server.</p>';
+  }
+}
+
+function exportCSV() {
+  window.open('http://localhost:3000/api/export/csv', '_blank');
+}
+
+function exportInvoicePDF(rows) {
+  const first = rows[0];
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+
+  doc.setFontSize(18);
+  doc.text('Purchase Order', 14, 20);
+  doc.setFontSize(11);
+  doc.text(`Invoice: ${first.invoice_number}`, 14, 30);
+  doc.text(`Supplier: ${first.supplier_name}`, 14, 37);
+  doc.text(`Contact: ${first.contact_info || '-'}`, 14, 44);
+  doc.text(`Order Date: ${first.order_date ? first.order_date.split('T')[0] : '-'}`, 14, 51);
+  doc.text(`Status: ${first.status}`, 14, 58);
+  doc.text(`Total: BDT ${first.total_amount}`, 14, 65);
+
+  let y = 80;
+  doc.setFontSize(12);
+  doc.text('Items:', 14, y);
+  y += 8;
+  doc.setFontSize(10);
+  doc.text('Product', 14, y);
+  doc.text('Qty', 110, y);
+  doc.text('Unit Price', 140, y);
+  y += 6;
+  rows.forEach(row => {
+    if (row.product_name) {
+      doc.text(String(row.product_name), 14, y);
+      doc.text(String(row.quantity), 110, y);
+      doc.text(String(row.unit_price), 140, y);
+      y += 7;
+    }
+  });
+
+  doc.save(`${first.invoice_number}.pdf`);
+}
+
+    document.getElementById('invoiceInput').addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') searchInvoice();
+    });
+
+    async function searchInvoice() {
+      const invoiceNumber = document.getElementById('invoiceInput').value.trim();
+      const errorDiv = document.getElementById('error');
+      const resultDiv = document.getElementById('result');
+      errorDiv.textContent = '';
+      resultDiv.innerHTML = '';
+
+      if (!invoiceNumber) {
+        errorDiv.textContent = 'Please enter an invoice number.';
+        return;
+      }
+
+      resultDiv.innerHTML = '<p>Searching...</p>';
+
+      try {
+        const response = await fetch(`http://localhost:3000/api/purchase-orders/${invoiceNumber}`, {credentials: 'include' });
+        if (!response.ok) {
+          const err = await response.json();
+          errorDiv.textContent = err.error;
+          resultDiv.innerHTML = '';
+          return;
+        }
+        const data = await response.json();
+        renderResult(data);
+      } catch (err) {
+        errorDiv.textContent = 'Could not connect to server.';
+        resultDiv.innerHTML = '';
+      }
+    }
+
+    function renderResult(rows) {
+      const first = rows[0];
+      let html = `
+        <div class="card">
+          <h2>Invoice: ${first.invoice_number}</h2>
+          <p><strong>Supplier:</strong> ${first.supplier_name} (${first.contact_info || 'no contact'})</p>
+          <p><strong>Order Date:</strong> ${first.order_date ? first.order_date.split('T')[0] : '-'}</p>
+          <p><strong>Status:</strong> <span id="statusDisplay">${first.status}</span></p>
+          <p><strong>Total:</strong> ৳${first.total_amount}</p>
+          <table>
+            <tr><th>Product</th><th>Quantity</th><th>Unit Price</th></tr>
+      `;
+      rows.forEach(row => {
+        if (row.product_name) {
+          html += `<tr><td>${row.product_name}</td><td>${row.quantity}</td><td>৳${row.unit_price}</td></tr>`;
+        }
+      });
+      html += `</table>
+        <br>
+        <label>Change Status</label>
+        <select id="editStatus">
+          <option value="pending" ${first.status === 'pending' ? 'selected' : ''}>Pending</option>
+          <option value="paid" ${first.status === 'paid' ? 'selected' : ''}>Paid</option>
+          <option value="cancelled" ${first.status === 'cancelled' ? 'selected' : ''}>Cancelled</option>
+        </select>
+        <button onclick="updateStatus('${first.invoice_number}')">Update Status</button>
+        <button class="danger" onclick="deleteInvoice('${first.invoice_number}')">Delete Invoice</button>
+        <button class="secondary" onclick='exportInvoicePDF(${JSON.stringify(rows)})'>Export PDF</button>
+        <div id="editMsg"></div>
+      </div>`;
+      document.getElementById('result').innerHTML = html;
+    }
+
+    async function updateStatus(invoiceNumber) {
+      const newStatus = document.getElementById('editStatus').value;
+      const msgDiv = document.getElementById('editMsg');
+      try {
+        const response = await fetch(`http://localhost:3000/api/purchase-orders/${invoiceNumber}`, {
+          credentials: 'include',
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: newStatus })
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          msgDiv.innerHTML = `<p class="error">${data.error}</p>`;
+          return;
+        }
+        msgDiv.innerHTML = `<p class="success">Status updated.</p>`;
+        searchInvoice();
+      } catch (err) {
+        msgDiv.innerHTML = `<p class="error">Could not connect to server.</p>`;
+      }
+    }
+
+    async function deleteInvoice(invoiceNumber) {
+      if (!confirm(`Are you sure you want to delete invoice ${invoiceNumber}? This cannot be undone.`)) {
+        return;
+      }
+      try {
+        const response = await fetch(`http://localhost:3000/api/purchase-orders/${invoiceNumber}`, {
+          credentials: 'include',
+          method: 'DELETE'
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          document.getElementById('error').textContent = data.error;
+          return;
+        }
+        document.getElementById('result').innerHTML = `<p class="success">${data.message}</p>`;
+        document.getElementById('invoiceInput').value = '';
+      } catch (err) {
+        document.getElementById('error').textContent = 'Could not connect to server.';
+      }
+    }
+
+    // --- ADD INVOICE TAB LOGIC ---
+    let itemCount = 0;
+    function addItemRow() {
+      itemCount++;
+      const container = document.getElementById('itemsContainer');
+      const row = document.createElement('div');
+      row.className = 'item-row';
+      row.innerHTML = `
+        <input type="text" placeholder="Product name" class="itemName">
+        <input type="number" placeholder="Qty" class="itemQty" min="1" style="max-width:80px;">
+        <input type="number" placeholder="Unit price" class="itemPrice" min="0" step="0.01" style="max-width:120px;">
+        <button class="danger" onclick="this.parentElement.remove()">✕</button>
+      `;
+      container.appendChild(row);
+    }
+    addItemRow(); // start with one row
+
+    async function submitInvoice() {
+      const errorDiv = document.getElementById('addError');
+      const successDiv = document.getElementById('addSuccess');
+      errorDiv.textContent = '';
+      successDiv.textContent = '';
+
+      const invoice_number = document.getElementById('newInvoiceNumber').value.trim();
+      const supplier_name = document.getElementById('newSupplierName').value.trim();
+      const contact_info = document.getElementById('newSupplierContact').value.trim();
+      const order_date = document.getElementById('newOrderDate').value;
+      const status = document.getElementById('newStatus').value;
+      const notes = document.getElementById('newNotes').value.trim();
+
+      const items = [];
+      document.querySelectorAll('.item-row').forEach(row => {
+        const name = row.querySelector('.itemName').value.trim();
+        const qty = parseFloat(row.querySelector('.itemQty').value);
+        const price = parseFloat(row.querySelector('.itemPrice').value);
+        if (name && qty > 0 && price >= 0) {
+          items.push({ product_name: name, quantity: qty, unit_price: price });
+        }
+      });
+
+      if (!invoice_number || !supplier_name || items.length === 0) {
+        errorDiv.textContent = 'Please fill in invoice number, supplier name, and at least one valid item.';
+        return;
+      }
+
+      try {
+        const response = await fetch('http://localhost:3000/api/purchase-orders', {
+          credentials: 'include',
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ invoice_number, supplier_name, contact_info, order_date, status, notes, items })
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          errorDiv.textContent = data.error;
+          return;
+        }
+        successDiv.textContent = `Purchase order ${data.invoice_number} created successfully.`;
+        document.getElementById('newInvoiceNumber').value = '';
+        document.getElementById('newSupplierName').value = '';
+        document.getElementById('newSupplierContact').value = '';
+        document.getElementById('newOrderDate').value = '';
+        document.getElementById('newNotes').value = '';
+        document.getElementById('itemsContainer').innerHTML = '';
+        addItemRow();
+      } catch (err) {
+        errorDiv.textContent = 'Could not connect to server.';
+      }
+    }
+  </script>
+</div> <!-- closes appScreen -->
+</body>
+</html>
